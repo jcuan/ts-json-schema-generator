@@ -49,6 +49,31 @@ export class ExtendedAnnotationsReader extends BasicAnnotationsReader {
             return undefined;
         }
 
+        // 要解析出member在大类型必须含有comment
+        let anyOf: any[] = [];
+        if (symbol.getFlags() == ts.SymbolFlags.ConstEnum) {
+            // 如果是enum，启用anyOf的注释
+            symbol.getDeclarations()?.at(0)?.forEachChild((child) => {
+                const symbol = symbolAtNode(child);
+                if (!symbol) {
+                    return;
+                }
+                let description = symbol.getDocumentationComment(this.typeChecker).map((comment) => comment.text)
+                    .join(" ")
+                    .replace(/\r/g, "")
+                    .trim()
+
+
+                // child.getText() 是这样的格式 "Block = 10"
+                let val = child.getText().split("= ").at(-1);
+
+                anyOf.push({
+                    const: Number(val),
+                    description: description,
+                })
+            })
+        }
+
         const markdownDescription = comments
             .map((comment) => comment.text)
             .join(" ")
@@ -57,12 +82,22 @@ export class ExtendedAnnotationsReader extends BasicAnnotationsReader {
 
         const description = markdownDescription.replace(/(?<=[^\n])\n(?=[^\n*-])/g, " ").trim();
 
-        return this.markdownDescription ? { description, markdownDescription } : { description };
+        let data = this.markdownDescription ? { description, markdownDescription } : { description };
+        if (anyOf.length > 0) {
+            let title = description;
+            return { ...data, anyOf, title };
+        }
+        return data;
     }
+
     private getTypeAnnotation(node: ts.Node): Annotations | undefined {
         const symbol = symbolAtNode(node);
         if (!symbol) {
             return undefined;
+        }
+
+        if (symbol.getFlags() == ts.SymbolFlags.ConstEnum) {
+            return { type: "number" };
         }
 
         const jsDocTags: ts.JSDocTagInfo[] = symbol.getJsDocTags();
